@@ -87,6 +87,12 @@ stop_workers()
     gcutil --project=$GCE_PROJECTID deleteinstance $INSTANCES --delete_boot_pd --force
 }
 
+stop_worker()
+{
+    echo "Stopping worker(s) : $*"
+    gcutil --project=$GCE_PROJECTID deleteinstance $* --delete_boot_pd --force
+}
+
 
 stop_n_workers()
 {
