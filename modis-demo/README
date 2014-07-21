@@ -2,14 +2,19 @@ Setup
 -----
 To install modis, use SVN to check out the required scripts:
 
+ TODO : Fix following.
 $ svn co https://svn.ci.uchicago.edu/svn/vdl2/SwiftApps/modis
 
-Once you do this, you also need the associated modis data. 
+Once you do this, you also need the associated modis data.
 To download the image data, run:
 
-$ cd modis/data/modis/2002
-$ wget http://www.ci.uchicago.edu/swift/modis/modis-2002.tar.gz
-$ tar -zxf modis-2002.tar.gz 
+[source,bash]
+-----
+cd modis/data/modis/2002
+wget http://www.ci.uchicago.edu/swift/modis/modis-2002.tar.gz
+tar -zxf modis-2002.tar.gz
+-----
+
 
 Hello world
 -----------

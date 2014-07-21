@@ -51,14 +51,14 @@ worker_loop ()
         if [[ "$?" == "0" ]]
         then
             echo "Headnode present in same network"
-            worker.pl http://headnode:$WORKERPORT 0099 ~/workerlog -w 3600
+            worker.pl http://headnode:$WORKERPORT 0099 /var/log/workerlog -w 3600
         else
             echo "Headnode in separate network. Attempt to contact $CENTRAL"
             ping $CENTRAL -w $PTIMEOUT
             if [[ "$?" == "0" ]]
             then
                 echo "CENTRAL present"
-                worker.pl http://$CENTRAL:$WORKERPORT 0099 ~/workerlog -w 3600
+                worker.pl http://$CENTRAL:$WORKERPORT 0099 /var/log/workerlog -w 3600
                 sleep 5
             else
                 echo "No CENTRAL or Headnode found"
@@ -143,7 +143,7 @@ start_n_more ()
         start_worker $i &> $LOG &
     done
     wait
-    gcutil --project=$GCE_PROJECID listinstances
+    gcutil --project=$GCE_PROJECTID listinstances
     echo "Updating WORKER_HOSTS"
     EXTERNAL_IPS=$(gcutil --project=$GCE_PROJECTID listinstances | grep worker | awk '{print $10}')
     WORKER_NAMES=$(gcutil --project=$GCE_PROJECTID listinstances | grep worker | awk '{print $2}')
