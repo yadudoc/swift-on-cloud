@@ -1,0 +1,8 @@
+
+
+Download and setup the sample dataset from gutenberg.org :
+wget http://www.gutenberg.org/files/4300/4300.zip
+unzip 4300.zip
+mkdir -p input
+mv 4300.txt input
+rm 4300.zip
