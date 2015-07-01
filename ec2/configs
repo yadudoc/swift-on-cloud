@@ -1,0 +1,33 @@
+AWS_CREDENTIALS_FILE=~/.ssh/keys/swift-grant-credentials.csv
+AWS_KEYPAIR_NAME=swift-test-pair
+AWS_KEYPAIR_FILE=~/.ssh/swift-test-pair.pem
+AWS_KEYPAIR_DIR=./keys
+# Set the number of worker nodes required
+AWS_WORKER_COUNT=5
+
+#ec2-user is the default user on Amazon linux
+AWS_USERNAME=ubuntu
+
+AWS_REGION=ap-southeast-2
+SECURITY_GROUP=swift_security_group1
+
+
+# Ubuntu Server 14.04 LTS (PV), SSD Volume Type - ami-c9d497f9 (64-bit)
+HEADNODE_IMAGE=ami-c9d497f9
+# Headnode instance type, refer to Amazon instance types page for reference
+# Legal machine types : t1.micro | m1.small | m1.medium | m1.large
+HEADNODE_MACHINE_TYPE=m1.medium
+
+# Ubuntu Server 14.04 LTS (PV), SSD Volume Type - ami-c9d497f9 (64-bit)
+WORKER_IMAGE=ami-c9d497f9
+# Headnode instance type, refer to Amazon instance types page for reference
+# Legal machine types : t1.micro | m1.small | m1.medium | m1.large
+WORKER_MACHINE_TYPE=m1.medium
+
+#WORKER_DISK=500 /dev/sdb1 /scratch
+
+# Set concurrent tasks per worker node
+WORKER_CONCURRENCY=4
+
+# SERVICE_TYPE can either be coasters or slurm
+SERVICE_TYPE=coasters
