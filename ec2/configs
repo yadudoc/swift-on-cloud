@@ -3,12 +3,12 @@ AWS_KEYPAIR_NAME=swift-test-pair
 AWS_KEYPAIR_FILE=~/.ssh/swift-test-pair.pem
 AWS_KEYPAIR_DIR=./keys
 # Set the number of worker nodes required
-AWS_WORKER_COUNT=5
+AWS_WORKER_COUNT=1
 
 #ec2-user is the default user on Amazon linux
 AWS_USERNAME=ubuntu
 
-AWS_REGION=ap-southeast-2
+AWS_REGION=us-west-2
 SECURITY_GROUP=swift_security_group1
 
 
@@ -19,10 +19,12 @@ HEADNODE_IMAGE=ami-c9d497f9
 HEADNODE_MACHINE_TYPE=m1.medium
 
 # Ubuntu Server 14.04 LTS (PV), SSD Volume Type - ami-c9d497f9 (64-bit)
-WORKER_IMAGE=ami-c9d497f9
+#WORKER_IMAGE=ami-c9d497f9
+# HVM image
+WORKER_IMAGE=ami-5189a661
 # Headnode instance type, refer to Amazon instance types page for reference
 # Legal machine types : t1.micro | m1.small | m1.medium | m1.large
-WORKER_MACHINE_TYPE=m1.medium
+WORKER_MACHINE_TYPE=t2.micro
 
 #WORKER_DISK=500 /dev/sdb1 /scratch
 

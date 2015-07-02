@@ -8,12 +8,6 @@ check_project ()
     RESULT=$(gcutil listinstances --project=$GCE_PROJECTID 2>&1)
 }
 
-start_worker ()
-{
-    echo "Starting worker(s) $*"
-    ./aws.py start_worker $*
-}
-
 # Is this valid for AWS ?
 check_keys ()
 {
@@ -50,11 +44,7 @@ start_n_workers ()
         echo "New workers needed : $(($COUNT - $CURRENT))"
     fi
 
-    for i in $(seq $CURRENT 1 $COUNT)
-    do
-        start_worker swift-worker-$i &> $LOG &
-    done
-    wait
+    ./aws.py start_workers $COUNT
     list_resources
 }
 
@@ -62,7 +52,7 @@ start_n_more ()
 {
     ACTIVE=$(./aws.py list_resources | grep worker | wc -l)
     MORE=$1
-    start_worker $(printf "swift-worker-%03d " $(seq $(($ACTIVE+1)) 1 $(($ACTIVE+$MORE)) ) )
+    start_workers $(printf "swift-worker-%03d " $(seq $(($ACTIVE+1)) 1 $(($ACTIVE+$MORE)) ) )
     list_resources
 }
 
@@ -70,36 +60,6 @@ stop_headnode()
 {
     echo "Stopping headnode"
     ./aws.py stop_headnode
-}
-
-generate_swiftproperties()
-{
-    EXTERNAL_IP=$(gcutil --project=$GCE_PROJECTID listinstances | grep headnode | awk '{ print $10 }')
-    SERVICE_PORT=50010
-    echo http://$EXTERNAL_IP:$SERVICE_PORT > PUBLIC_ADDRESS
-    cat <<EOF > swift.properties
-site=cloud,local
-use.provider.staging=true
-execution.retries=2
-
-site.local {
-   jobmanager=local
-   initialScore=10000
-   filesystem=local
-   workdir=/tmp/swiftwork
-}
-
-site.cloud {
-   taskWalltime=04:00:00
-   initialScore=10000
-   filesystem=local
-   jobmanager=coaster-persistent:local:local:http://$EXTERNAL_IP:$SERVICE_PORT
-   workerManager=passive
-   taskThrottle=800
-   workdir=/home/$USER/work
-}
-
-EOF
 }
 
 list_resources()
@@ -117,23 +77,6 @@ start_headnode()
     ./aws.py start_headnode
 }
 
-start_workers()
-{
-    WORKERS_REQUESTED=$AWS_WORKER_COUNT
-    CURRENT_COUNT=$(list_resources | grep "swift-worker" | wc -l)
-    echo "Current workers   : $CURRENT_COUNT"
-    echo "Workers requested : $WORKERS_REQUESTED"
-    WORKERS_REQUIRED=$(($WORKERS_REQUESTED - $CURRENT_COUNT))
-    if [[ $WORKERS_REQUIRED -gt 0 ]]
-    then
-        #printf("swift-worker-%03d", {$CURRENT_COUNT..$(($CURRENT_COUNT+$COUNT_NEEDED))})
-        END=$(($CURRENT_COUNT+$WORKERS_REQUIRED-1))
-        start_worker $(printf "swift-worker-%03d " $(seq $CURRENT_COUNT 1 $END))
-    else
-        echo "No additional workers needed"
-    fi
-}
-
 connect()
 {
     source configs
@@ -141,9 +84,14 @@ connect()
     [[ -z $1 ]] && NODE="headnode"
     [[ -z $AWS_USERNAME ]] && AWS_USERNAME="ec2-user"
 
-    IP=$(./aws.py list_resource $NODE)
+    RESOURCE=($(./aws.py list_resource $NODE))
+    IP=${RESOURCE[4]}
+
+    REGION_KEYFILE=$AWS_KEYPAIR_DIR/$AWS_KEYPAIR_NAME.$AWS_REGION.pem
+
     echo "Connecting to AWS node:$NODE on $IP as $AWS_USERNAME"
-    ssh -A -o StrictHostKeyChecking=no -l $AWS_USERNAME -i $AWS_KEYPAIR_FILE $IP
+    echo "    ssh -A -o StrictHostKeyChecking=no -l $AWS_USERNAME -i $REGION_KEYFILE $IP"
+    ssh -A -o StrictHostKeyChecking=no -l $AWS_USERNAME -i $REGION_KEYFILE $IP
 }
 
 
@@ -151,7 +99,7 @@ init()
 {
     source configs
     start_headnode
-    start_workers
+    start_workers $AWS_WORKER_COUNT
     list_resources
 }
 #init

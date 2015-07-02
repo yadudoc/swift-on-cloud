@@ -334,7 +334,8 @@ def check_conf_sanity(configs):
 
 
 def init():
-    logging.basicConfig(filename='aws.log', level=logging.INFO)
+    logging.basicConfig(filename='aws.log', level=logging.INFO, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+                    datefmt='%m-%d %H:%M')
 
     configs    = configurator.read_configs('configs')
 
