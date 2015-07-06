@@ -1,0 +1,260 @@
+Swift on the cloud
+------------------
+
+There are primarily two modes in which Swift can run over cloud resources.
+
+1. Persistent mode - The simplest one in which an ad-hoc cluster of
+cloud instances are started as worker nodes and are connected to a service
+on a separate cloud-headnode
+2. Dynamic mode - Swift starts and stops resources based on the resource
+requirements of the tasks at various parts of the workflow it is executing.
+
+
+This README will go over the steps to run swift in Dynamic mode. Currently
+only Amazon's Elastic Cloud Compute (EC2) and Google's Google Compute Engine(GCE)
+are supported cloud providers.
+
+Please note that support for Dynamic mode for Clouds are available only in Swift-trunk
+as of the writing of this document (28 Sep 2014), and the tentative release with these
+features would be Swift 0.96.
+
+Requirements
+^^^^^^^^^^^^
+
+* Oracle java ( jdk1.7 preferred )
+* Ant (1.9 preferred)
+* Python 2.7
+* apache-libcloud library
+
+To install Swift-trunk follow steps below:
+
+[source,bash]
+-----
+git clone https://github.com/swift-lang/swift-k.git
+cd swift-k
+ant redist
+export PATH=$PWD/dist/swift-svn/bin:$PATH
+-----
+
+NOTE: Add the path swift-k/dist/swift-svn/bin to the PATH environment variable and export
+from either .bashrc or .bash_profile, to ensure that swift is available from your PATH.
+
+To install apache-libcloud on an Ubuntu machine:
+
+[source,bash]
+-----
+sudo apt-get install python-pip
+sudo pip install apache-libcloud
+-----
+
+Configuration
+^^^^^^^^^^^^^
+
+Define the jobManager to the cloud provider that you choose :
+jobManager : local:<ec2-clouds|gce-cloud>
+
+The configuration options specific to the cloud provider is set under jobOptions.
+
+Here are the options supported by ec2-cloud :
+
+ec2CredentialsFile : Absolute path to a csv file that contains the User name, Access Key Id, and Access Key to the AWS resources.
+ec2KeypairName     : Name of the key pair that you wish to use. If you do not have one, provide a name for the key.
+ec2KeypairFile     : Absolute path to a .pem file that can be downloaded from the AWS website. If you do not have one, provide
+                     the absolute path to where you'd like to keep the swift-generated .pem file.
+ec2SecurityGroup   : Provide the security group if you have one, otherwise leave the defaults on swift_security_group1
+ec2WorkerImage     : Provide the AMI id of the image you would like to use. Please see notes about AMI's below.
+ec2WorkerType      : Set the instance type you require to be provisioned. Eg c3.large, t2.micro
+ec2CloudInit       : Full path to a bash script which would be executed along with the cloud-init scripts at boot time of the worker-instance.
+
+
+Here are the options supported by gce-cloud :
+
+gceSecurityGroup   : swift_security_group1
+gceProjectId       :     mystic-pagoda-551
+gceWorkerImage     :   "gs://swift-worker/8cdfa8723966ca128d02ac148c67cf46fcd65cd1.image.tar.gz"
+gceKeypairFile     :   /home/yadu/.ssh/GCE_priv_key.pem
+gceEmailAccount    :  "791876389344-sot5mq0jc6j5hclbsmaguq6crh93mlj4@developer.gserviceaccount.com"
+gceZone            :  Select the gce zone to use, eg.  us-central1-a
+gceWorkerType      :  Select worker instance type, eg. f1-micro
+
+
+
+Here is a sample configuration file :
+
+sites: [aws]
+site.aws {
+    execution {
+        type:"coaster"
+        URL: "127.0.0.1"
+        jobManager: "local:ec2-cloud"
+        options {
+            maxJobs: 10
+            tasksPerNode: 2
+            workerLoggingLevel: TRACE
+            workerLoggingDirectory: /tmp
+            highOverallocation: 100
+            lowOverallocation: 100
+            jobOptions {
+                # Absolute paths necessary for credentials file
+                ec2CredentialsFile: ${env.HOME}/.ssh/swift-grant-credentials.csv
+                ec2SecurityGroup:   swift_security_group1
+                ec2KeypairName:     swift-test-pair
+                # Absolute paths necessary for keypair file
+                ec2KeypairFile:     ${env.HOME}/.ssh/swift-test-pair.pem
+                ec2WorkerImage:     ami-23700813
+                ec2WorkerType:      t1.micro
+            }
+        }
+    }
+
+    initialParallelTasks: 20
+    maxParallelTasks: 20
+    filesystem.type: swift
+    workDirectory: /tmp/swift-trunk-test
+    staging: "local"
+    app.ALL {executable: "*"}
+}
+lazyErrors: false
+
+
+Manage you Cloud resources
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Update the file swift-on-cloud/aws/configs in the cloned repository from the previous step,
+with the following information:
+
+ *  AWS_CREDENTIALS_FILE : Path to the credentials file downloaded in step 6 of _sign_up_online
+ *  AWS_WORKER_COUNT : Use this to specify the number of worker instances required.
+ *  AWS_KEYPAIR_NAME : Name of the keypair to use. If this keypair does not exist a keypair of the same name will be generated.
+ *  AWS_KEYPAIR_FILE : Path to the <keypair>.pem. If a keypair file of the specified name does not exist, a new one will be generated.
+ *  AWS_USERNAME     : The username used for login to the cloud-instances. Set to the default "ec2-user" for Amazon Linux AMI.
+ *  AWS_REGION       : Default=us-west-2 | Do NOT change
+ *  SECURITY_GROUP   : Default=swift_security_group1
+ *  HEADNODE_IMAGE, WORKER_IMAGE : These are images used to boot up the headnode and workers.
+ *  HEADNODE_MACHINE_TYPE, WORKER_MACHINE_TYPE : VM types for workers and the headnode. Choose between :
+    - t2.<micro/small/medium>, m3.<medium,large,xlarge,2xlarge> :For general purpose computing
+    - c3.<,x,2x,4x,8x>large             : Compute Optimised
+    - g2.2xlarge                        : GPU Instances
+    - r3.<,x,2x,4x,8x>large             : Memory Optimised
+    - i2.<x,2x,4x,8x>large, hs1.8xlarge : Storage Optimised
+
+NOTE: Get details of instances and pricing http://aws.amazon.com/ec2/pricing[here]. The pricing varies
+between geographical locations so make sure you check for US West Oregon, which is the default.
+
+NOTE: GCE_WORKER_COUNT directly affects the cost. If you require more than 22 nodes including the
+headnode, file a request to increase your resource quotas.
+
+NOTE: Read more about AWS regions and availability zones http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html[here]
+
+WARNING:  Do *NOT* change the images for the worker and headnode to point at images which have not
+been explicitly setup with swift.
+
+Start your cloud setup!
+^^^^^^^^^^^^^^^^^^^^^^^
+
+Once you finish editing the configs file with your preferences, start the cloud instances
+by sourcing the setup script.
+
+The setup script will setup firewall rules, copy over the required images and start a headnode
+and the requested number of worker instances.
+
+[source, bash]
+-----
+# Must source the setup script.
+source setup.sh
+-----
+
+NOTE: Once your instances are started, you can monitor them from the Amazon Web services https://console.aws.amazon.com/ec2/v2/home?region=us-west-2#Instances:[Management Console]
+
+
+Run the tutorial on the cloud
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Once your cloud resources have been configured and setup, you can run the swift-cloud-tutorial
+directly from the cloud. The cloud resources created include a headnode, to which you would
+connect to, and the several nodes in worker roles which would do computations in parallel.
+
+To run the tutorial, first connect to the headnode:
+
+
+[source, bash]
+-----
+# Connect to the Headnode
+connect headnode
+# This will have you logged in to the headnode on the cloud
+-----
+
+Run swift from your local machine
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Now, once you've configured and started you cloud resources we can move on to trying the
+swift-cloud-tutorial. To run the cloud tutorial from your local machine :
+
+[source,bash]
+-----
+cd swift-on-cloud/swift-cloud-tutorial
+source setup.sh
+-----
+
+NOTE: You must source the setup.sh script.
+
+WARNING: Once the cloud instances are started, they start costing money. Remember to shut down
+instances using the "dissolve" command.
+
+Miscellanious operations supported:
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+[source, bash]
+-----
+# Connect to the Headnode
+connect headnode
+-----
+
+To see resources use :
+[source, bash]
+-----
+list_resources
+-----
+
+To ssh to any resource listed :
+[source, bash]
+-----
+# Specify the resource name as listed by list_resources here
+# If resource_name is omitted, connect will try to connect to the
+# headnode
+connect <resource_name>
+-----
+
+To stop all resources use from your local machine. Please wait for a couple of minutes
+for the command to finish. Confirm that all resources have been removed using
+list_resources.  :
+[source, bash]
+-----
+# This will delete the headnode as well as all workers.
+# This command will take a few minutes to execute
+dissolve
+# Use list_resources to check if any resources still linger
+list_resource
+-----
+
+To add more worker nodes use:
+[source, bash]
+-----
+# The number of nodes you can create is limited by the quota's set by google.
+# To increase quotas contact google using the change request form available
+# under Your project / Compute engine / Quotas tab in developer console
+start_n_more <Number of nodes>
+
+# To remove worker nodes, use following command. If a number greater than the
+# number of active workers is specified, all active workers will be deleted. No
+# errors will be raised.
+stop_n_workers <Number of workers>
+
+# Alternatively update the configs with the total number of nodes you require
+# and rerun the setup script
+source setup.sh
+-----
+
+Note: To create your own customised images, you can connect to the swift instances (headnodes/workers) and
+modify them. Once done you can create your own images. Documentation on Amazon Machine Images is available
+http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/AMIs.html[here]
