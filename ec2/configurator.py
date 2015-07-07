@@ -2,6 +2,7 @@
 
 import os
 import pprint
+import ast
 
 def _read_conf(config_file):
     cfile = open(config_file, 'r').read()
@@ -38,6 +39,19 @@ def read_configs(config_file):
         print "AWS_CREDENTIALS_FILE , Missing"
         print "ERROR: Cannot proceed without access to AWS_CREDENTIALS_FILE"
         exit(-1)
+
+    if 'WORKER_REQUEST' in config:
+        try :
+            config['WORKER_REQUEST']   = ast.literal_eval(config['WORKER_REQUEST'])
+        except:
+            print "Failed to parse WORKER_REQUEST: {0}".format(config['WORKER_REQUEST'])
+            exit(-1)
+
+    if 'AWS_DRY_RUN' in config and config['AWS_DRY_RUN'].lower() == 'true' :
+        config['AWS_DRY_RUN'] = True
+    else:
+        config['AWS_DRY_RUN'] = False
+
 
     if 'AWS_KEYPAIR_FILE' in config:
         config['AWS_KEYPAIR_FILE'] = os.path.expanduser(config['AWS_KEYPAIR_FILE'])
@@ -127,8 +141,8 @@ CONCURRENCY="SET_CONCURRENCY"
 WORKERPORT="50005"
 #Ping timeout
 cd /home/ubuntu
-install_s3fs() {
 apt-get update; apt-get install -y build-essential git libfuse-dev libcurl4-openssl-dev libxml2-dev mime-support libtool mdadm
+install_s3fs() {
 apt-get install -y automake
 git clone https://github.com/s3fs-fuse/s3fs-fuse
 cd s3fs-fuse/
@@ -139,7 +153,7 @@ make; sudo make install
 cd /usr/local/bin
 wget http://users.rcc.uchicago.edu/~yadunand/jdk-7u51-linux-x64.tar.gz; tar -xzf jdk-7u51-linux-x64.tar.gz;
 wget http://users.rcc.uchicago.edu/~yadunand/swift-trunk-latest.tar.gz; tar -xzf swift-trunk-latest.tar.gz
-wget http://users.rcc.uchicago.edu/~yadunand/docker_run -O /usr/local/bin/swift-trunk/bin/docker_run
+#wget http://users.rcc.uchicago.edu/~yadunand/docker_run -O /usr/local/bin/swift-trunk/bin/docker_run
 chmod a+x /usr/local/bin/swift-trunk/bin/docker_run
 export JAVA=/usr/local/bin/jdk1.7.0_51/bin
 export SWIFT=/usr/local/bin/swift-trunk/bin
@@ -147,7 +161,7 @@ export PATH=$JAVA:$SWIFT:$PATH
 disks() { mkdir /scratch;
 mdadm --create --verbose /dev/md0 --level=stripe --raid-devices=2 /dev/xvdb /dev/xvdc
 mkfs.ext4 /dev/md0; mount -t ext4 /dev/md0 /scratch; chmod 777 /scratch
-}; #disks;
+}; disks;
 mkdir /s3; chmod 777 /s3;
 PTIMEOUT=4
 #Disk_setup

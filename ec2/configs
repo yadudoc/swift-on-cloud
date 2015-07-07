@@ -1,3 +1,4 @@
+#AWS_CREDENTIALS_FILE=~/.ssh/keys/swift-grant-credentials.csv
 AWS_CREDENTIALS_FILE=~/.ssh/keys/swift-grant-credentials.csv
 AWS_KEYPAIR_NAME=swift-test-pair
 AWS_KEYPAIR_FILE=~/.ssh/swift-test-pair.pem
@@ -24,8 +25,10 @@ HEADNODE_MACHINE_TYPE=m1.medium
 WORKER_IMAGE=ami-5189a661
 # Headnode instance type, refer to Amazon instance types page for reference
 # Legal machine types : t1.micro | m1.small | m1.medium | m1.large
-WORKER_MACHINE_TYPE=t2.micro
-
+WORKER_MACHINE_TYPE=c3.large
+#WORKER_REQUEST={'type':'OnDemand'}
+WORKER_REQUEST={'type':'Spot', 'price':'1.0'}
+#WORKER_REQUEST={'type':'Spot', 'strategy' : 'bid_on_demand', 'price':'0.10'}
 #WORKER_DISK=500 /dev/sdb1 /scratch
 
 # Set concurrent tasks per worker node
@@ -33,3 +36,4 @@ WORKER_CONCURRENCY=4
 
 # SERVICE_TYPE can either be coasters or slurm
 SERVICE_TYPE=coasters
+AWS_DRY_RUN=False

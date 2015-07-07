@@ -9,6 +9,8 @@ import configurator
 import os
 import logging
 import sys
+import json
+import urllib2
 
 import imp
 try:
@@ -29,6 +31,22 @@ ERR_CODE={'HEADNODE_NO_IP': 5,
           'HEADNODE_NO_EXIST': 6,
           'CONFIG_SANITY_FAIL': 2}
 #==================================================================================
+
+def get_on_demand_prices(driver, configs):
+    instance_url = "http://aws.amazon.com/ec2/pricing/pricing-on-demand-instances.json"
+    response     = urllib2.urlopen(instance_url)
+    pricing      = json.loads(response.read())
+    reg_pricing  = pricing['config']['regions']
+
+    Prices       = {}
+    for region in reg_pricing:
+        if region['region'] in configs['AWS_REGION']:
+            for instType in region["instanceTypes"]:
+                for size in instType['sizes']:
+                    Prices[size['size']] = [ size['valueColumns'][0]['prices']['USD'] ]
+                    #print size['size'], size['valueColumns'][0]['prices']['USD']
+
+    return Prices
 
 def get_public_ip(driver, name):
     print "Not implemented"
@@ -237,6 +255,7 @@ def start_headnode(conn, network, configs, instance_name):
 
     print "[DEBUG] start_headnode : {0}".format(instance_name)
     userdata    = setup_headnode_userdata(configs)
+
     reservation = conn.run_instances(configs['HEADNODE_IMAGE'],
                                      min_count=1,
                                      max_count=1,
@@ -457,8 +476,12 @@ def list_resources(configs, conn):
     print "======================SERVICE SUBNET============================="
     print "{0:20} | {1:10} | {2:10} | {3:10}".format("Name","ID", "IP_Addr", "State")
     for node in service_nodes:
-        print "{0:20} | {1:10} | {2:10} | {3:10}".format(node.tags['Name'],
-                                                         node.id, node.ip_address, node.state)
+        if 'Name' in node.tags :
+            print "{0:20} | {1:10} | {2:10} | {3:10}".format(node.tags['Name'],
+                                                             node.id, node.ip_address, node.state)
+        else:
+            print "{0:20} | {1:10} | {2:10} | {3:10}".format("-",
+                                                             node.id, node.ip_address, node.state)
     print "======================WORKER SUBNET=============================="
     print "{0:20} | {1:10} | {2:10} | {3:10}".format("Name","ID", "IP_Addr", "State")
     for node in worker_nodes:
@@ -474,6 +497,16 @@ def manage_ip(configs, conn, instances):
         associate_elastic_ip(conn,instance)
     return
 
+
+def terminate_instance(configs, conn, instance_id ):
+    node = get_instances(configs, conn, {'instance-id': instance_id})
+    print node
+    print node[0].id
+    addrs = [address for address in conn.get_all_addresses(filters={'instance-id': [node[0].id]})]
+    for address in addrs:
+        print "DEBUG: Disassociating address: {0} from {1}".format(address, node.id)
+        address.disassociate(dry_run=configs['AWS_DRY_RUN'])
+    node[0].terminate(dry_run=configs['AWS_DRY_RUN'])
 
 def terminate_all_nodes(configs, conn):
     service_nodes  = get_instances(configs, conn, {'subnet-id': configs['service_subnet_id']})
@@ -504,3 +537,70 @@ def stop_nodes(configs, conn, network, worker_count):
             address.disassociate()
         node.terminate()
 
+def process_price(request):
+    if request['type'].lower() == "spot" :
+        print "Requesting a spot instance at {0}".format(float(request['price']))
+        return float(request['price'])
+
+def spot_request_submit(conn, network, configs, count):
+    print "DEBUG: start_worker : ",count
+    nodes = get_instances(configs, conn, {'tag:Name': HEADNODE_NAME})
+    if not nodes:
+        logging.error("HEADNODE is not online :{0}".format(HEADNODE_NAME))
+        logging.error("FATAL! Cannot proceed. Dying.")
+        exit(ERR_CODE['HEADNODE_NO_EXIST'])
+
+    headnode_ip = nodes[0].ip_address
+    if not headnode_ip:
+        logging.error("{0} is not associated with a public_ip_address".format(HEADNODE_NAME))
+        logging.error("FATAL! Cannot proceed. Dying.")
+        exit(ERR_CODE['HEADNODE_NO_IP'])
+
+    userdata    = setup_worker_userdata(configs, headnode_ip)
+
+    price       = process_price(configs['WORKER_REQUEST'])
+
+    spot_reqs   = conn.request_spot_instances(price,
+                                              configs['WORKER_IMAGE'],
+                                              count=count,
+                                              instance_type=configs['WORKER_MACHINE_TYPE'],
+                                              type='one-time',
+                                              security_group_ids=[network['WORKER_SECGROUP'].id],
+                                              key_name=configs['AWS_KEYPAIR_NAME'],
+                                              subnet_id=network['WORKER_SUBNET'].id,
+                                              user_data=userdata,
+                                              dry_run=configs['AWS_DRY_RUN'])
+
+
+    print "Spot_requests : {0}".format(spot_reqs)
+    request_ids  = [x.id for x in spot_reqs]
+    idx = 0
+    flag = True
+    instances = []
+    while flag:
+        flag = False
+        requests = conn.get_all_spot_instance_requests(request_ids=request_ids)
+        for req in requests:
+            print "Req_id:{0} Req_state:{1} Req_status:{2} Req_instance:{3} ".format(req.id,
+                                                                                    req.state,
+                                                                                    req.status,
+                                                                                    req.instance_id)
+            if req.instance_id == None:
+                flag = True
+        time.sleep(15)
+
+    requests = conn.get_all_spot_instance_requests(request_ids=request_ids)
+    instance_ids = [ x.instance_id for x in requests ]
+    print "Instance ids : ", instance_ids
+
+    instances= get_instances(configs, conn, {'instance-id': instance_ids })
+
+    for instance in instances:
+        instance.add_tag('Name', "sworker-{0}".format(instance.id))
+        instance.add_tag('subnet_id', network['WORKER_SUBNET'])
+        sleep_until(instance, 'running')
+        address = setup_elastic_ip(conn)
+        conn.associate_address(instance_id=instance.id, allocation_id=address.allocation_id)
+        idx += 1
+
+    return instances
