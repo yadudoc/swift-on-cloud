@@ -181,6 +181,17 @@ worker_loop ()
 worker_loop &
 '''
 
+HEADNODE_USERDATA_TURBINE='''#!/bin/bash
+mkdir -p $HOME/.ssh; chmod 700 $HOME/.ssh
+echo "PRIVATE_KEY" > $HOME/.ssh/id_rsa
+chmod 600 $HOME/.ssh/id_rsa
+'''
+
+WORKER_USERDATA_TURBINE='''#!/bin/bash
+mkdir -p $HOME/.ssh; chmod 700 $HOME/.ssh
+echo "PUBLIC_KEY" >> $HOME/.ssh/authorized_keys
+'''
+
 def getstring(target):
     if target == "headnode_coasters":
         return HEADNODE_USERDATA_TRUNK
@@ -193,6 +204,12 @@ def getstring(target):
 
     elif target == "worker_slurm":
         return WORKER_USERDATA_SLURM
+
+    elif target == "headnode_turbine":
+        return HEADNODE_USERDATA_TURBINE
+
+    elif target == "worker_turbine":
+        return WORKER_USERDATA_TURBINE
 
     else:
         return -1

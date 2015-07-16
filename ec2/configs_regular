@@ -14,11 +14,7 @@ SECURITY_GROUP=swift_security_group1
 
 
 # Ubuntu Server 14.04 LTS (PV), SSD Volume Type - ami-c9d497f9 (64-bit)
-#HEADNODE_IMAGE=ami-c9d497f9
-
-# Swift_T headnode
-HEADNODE_IMAGE=ami-115e6321
-
+HEADNODE_IMAGE=ami-c9d497f9
 # Headnode instance type, refer to Amazon instance types page for reference
 # Legal machine types : t1.micro | m1.small | m1.medium | m1.large
 HEADNODE_MACHINE_TYPE=t1.micro
@@ -29,11 +25,7 @@ NAT_MACHINE_TYPE=t2.micro
 #WORKER_IMAGE=ami-c9d497f9
 # HVM image
 #WORKER_IMAGE=ami-5189a661
-#WORKER_IMAGE=ami-41111171
-
-# Swift_T worker
-WORKER_IMAGE=ami-115e6321
-
+WORKER_IMAGE=ami-41111171
 # Headnode instance type, refer to Amazon instance types page for reference
 # Legal machine types : t1.micro | m1.small | m1.medium | m1.large
 #WORKER_MACHINE_TYPE=t2.micro
@@ -47,5 +39,5 @@ WORKER_REQUEST="{'type':'Spot', 'price':'1.0'}"
 WORKER_CONCURRENCY=4
 
 # SERVICE_TYPE can either be coasters or slurm
-SERVICE_TYPE=turbine
+SERVICE_TYPE=coasters
 AWS_DRY_RUN=False

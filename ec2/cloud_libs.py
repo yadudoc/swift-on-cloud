@@ -27,6 +27,7 @@ import boto.ec2
 # Global defs
 #==================================================================================
 HEADNODE_NAME="swift-headnode"
+NAT_NAME="swift-nat"
 ERR_CODE={'HEADNODE_NO_IP': 5,
           'HEADNODE_NO_EXIST': 6,
           'CONFIG_SANITY_FAIL': 2}
@@ -97,8 +98,8 @@ def setup_gateway(conn, vpc, vpc_name):
     return gateway
 
 
-def setup_routetable(conn, vpc, route_name, gateway, dest_cidr_block):
-    logging.debug("setup_routetable : Setting up routetable")
+def setup_public_routetable(conn, vpc, route_name, gateway, dest_cidr_block):
+    logging.debug("setup_routetable : Setting up public routetable")
     # If route_table exists, return that
     for route_table in filter_by_name_and_vpc(conn.get_all_route_tables, route_name, vpc):
         logging.debug("setup_routetable : Found route table, Skipping create")
@@ -111,7 +112,26 @@ def setup_routetable(conn, vpc, route_name, gateway, dest_cidr_block):
     route_table.add_tag('Name', route_name);
 
     logging.debug("Setting up route for access from anywhere")
-    conn.create_route(route_table.id, dest_cidr_block, gateway.id)
+    conn.create_route(route_table.id, dest_cidr_block, gateway_id=gateway.id)
+    return route_table
+
+def setup_private_routetable(conn, vpc, route_name, gateway, dest_cidr_block):
+
+    nodes = get_instances(conn, {'tag:Name': NAT_NAME})
+    logging.debug("setup_routetable : Setting up private routetable")
+    # If route_table exists, return that
+    for route_table in filter_by_name_and_vpc(conn.get_all_route_tables, route_name, vpc):
+        logging.debug("setup_routetable : Found route table, Skipping create")
+        logging.debug("setup_routetable : Route_table : ", route_table)
+        return route_table
+
+    # Create new route_table if none exists
+    route_table = conn.create_route_table(vpc.id)
+    # Tag gateway with vpc_name for simplicity
+    route_table.add_tag('Name', route_name);
+
+    logging.debug("Setting up route for access from anywhere")
+    conn.create_route(route_table.id, dest_cidr_block, instance_id=nodes[0].id)
     return route_table
 
 
@@ -119,7 +139,7 @@ def setup_routetable(conn, vpc, route_name, gateway, dest_cidr_block):
 Setup subnets which isolate, workers which are protected and services
 which need to be accessible and act as bridges to reach workers.
 '''
-def setup_subnet(conn, vpc, route_table, subnet_name, cidr_block, region):
+def setup_subnet(conn, vpc, subnet_name, cidr_block, region):
 
     zones = conn.get_all_zones()
     if not zones:
@@ -140,10 +160,13 @@ def setup_subnet(conn, vpc, route_table, subnet_name, cidr_block, region):
         exit(-1)
 
     subnet.add_tag('Name', subnet_name)
-    logging.debug("Associating subnet with route_table ")
-    conn.associate_route_table(route_table.id, subnet.id)
+
     return subnet
 
+# Attach a route table with the subnet
+def associate_route_to_subnet(conn, route_table, subnet):
+    logging.debug("Associating subnet with route_table ")
+    return conn.associate_route_table(route_table.id, subnet.id)
 
 # Note that setup_security_group takes boto.ec2.connection rather
 # than a connection to the vpc region
@@ -162,14 +185,14 @@ def setup_security_group (conn, vpc, group_name):
     return secgroup
 
 
-
 def setup_networking(configs, conn):
     """
     AWS docs : http://docs.aws.amazon.com/AmazonVPC/latest/GettingStartedGuide/ExerciseOverview.html
     boto docs: http://boto.readthedocs.org/en/latest/vpc_tut.html
     """
     configs['vpc_name']        = 'swift_vpc'
-    configs['table_name']      = 'Swift_route_table'
+    configs['public_table']    = 'swift_public_routes'
+    configs['private_table']   = 'swift_private_routes'
     configs['dest_cidr_block'] = '0.0.0.0/0'
     configs['worker_net']      = 'worker-subnet'
     configs['service_net']     = 'service-subnet'
@@ -178,7 +201,8 @@ def setup_networking(configs, conn):
     configs['worker_block']    = '42.43.0.0/17'
 
     vpc_name        = configs['vpc_name']
-    table_name      = configs['table_name']
+    public_table    = configs['public_table']
+    private_table   = configs['private_table']
     dest_cidr_block = configs['dest_cidr_block']
     worker_net      = configs['worker_net']
     service_net     = configs['service_net']
@@ -190,46 +214,55 @@ def setup_networking(configs, conn):
     regions    = boto.ec2.regions()
     [region]   = [ r for r in regions if r.name == configs['AWS_REGION'] ]
 
-    '''
-    for vpc in filter_by_name(conn.vpc.get_all_vpcs, vpc_name):
-        print vpc
-
-    exit
-    '''
-
     from boto.vpc import VPCConnection
     vconn = VPCConnection(aws_access_key_id=configs['AWSAccessKeyId'],
                           aws_secret_access_key=configs['AWSSecretKey'],
                           region=region)
 
+    configs['vpc_connection'] = vconn
     # Setup VPC
     vpc     = setup_vpc(vconn, vpc_name, VPC_block)
 
     # Setup internet_gateway
     gateway = setup_gateway(vconn, vpc, vpc_name)
 
-    # Setup route_table
-    route_table = setup_routetable(vconn, vpc, table_name, gateway, dest_cidr_block)
-
     # Setup one subnet for the services, and one subnet for the workers
-    worker_subnet  = setup_subnet(vconn, vpc, route_table, worker_net,  worker_block, configs['AWS_REGION'])
+    worker_subnet  = setup_subnet(vconn, vpc, worker_net,  worker_block, configs['AWS_REGION'])
     configs['worker_subnet_id'] = worker_subnet.id
-    service_subnet = setup_subnet(vconn, vpc, route_table, service_net, service_block, configs['AWS_REGION'])
+    service_subnet = setup_subnet(vconn, vpc, service_net, service_block, configs['AWS_REGION'])
     configs['service_subnet_id'] = service_subnet.id
-    worker_sec = setup_security_group(conn, vpc, "worker_security_group")
-    service_sec = setup_security_group(conn, vpc, "service_security_group")
+    worker_sec     = setup_security_group(conn, vpc, "worker_security_group")
+    service_sec    = setup_security_group(conn, vpc, "service_security_group")
+
+    # Once subnets are created, launch the NAT instance into the service_subnet
+    # The NAT instance id is required for setting up the private_route_table
+    nat_instance   = start_nat(conn, service_subnet.id, [service_sec.id], configs)
+
+    # Setup route_table
+    public_route_table  = setup_public_routetable(vconn, vpc, public_table, gateway, dest_cidr_block)
+    private_route_table = setup_private_routetable(vconn, vpc, private_table, gateway, dest_cidr_block)
 
     logging.debug("[VPC]  Name       : ", vpc_name)
     logging.debug("[VPC]  id         : ", vpc.id)
     logging.debug("[VPC]  cidr block : ", vpc.cidr_block)
 
-    network = { 'VPC'              : vpc,
-                'GATEWAY'          : gateway,
-                'ROUTE_TABLE'      : route_table,
-                'WORKER_SUBNET'    : worker_subnet,
-                'SERVICE_SUBNET'   : service_subnet,
-                'WORKER_SECGROUP'  : worker_sec,
-                'SERVICE_SECGROUP' : service_sec
+    # Attach route tables to the corresponding subnets
+    associate_route_to_subnet(vconn, public_route_table, service_subnet)
+    associate_route_to_subnet(vconn, private_route_table, worker_subnet)
+
+    # Enable Virtual Gateway route propagation - This allows the private subnet elements
+    # to reach out to the internet for updates
+    #status = vconn.enable_vgw_route_propagation(public_route_table.id, gateway.id)
+    #print "VGW route propagation status : {0}".format(status)
+
+    network = { 'VPC'                 : vpc,
+                'GATEWAY'             : gateway,
+                'PUBLIC_ROUTE_TABLE'  : public_route_table,
+                'PRIVATE_ROUTE_TABLE' : private_route_table,
+                'WORKER_SUBNET'       : worker_subnet,
+                'SERVICE_SUBNET'      : service_subnet,
+                'WORKER_SECGROUP'     : worker_sec,
+                'SERVICE_SECGROUP'    : service_sec
                }
     return network
 
@@ -239,6 +272,9 @@ def setup_headnode_userdata(configs):
         userdata = configurator.getstring("headnode_slurm")
     elif configs['SERVICE_TYPE'] == 'coasters':
         userdata = configurator.getstring("headnode_coasters")
+    elif configs['SERVICE_TYPE'] == 'turbine':
+        userdata = configurator.getstring("headnode_turbine")
+        userdata = userdata.replace("PRIVATE_KEY", open("./turbine_rsa").read())
     else:
         logging.error("Unknown SERVICE_TYPE:{0}\nCannot proceed, failing".format(configs['SERVICE_TYPE']))
         exit(-1);
@@ -248,7 +284,7 @@ def setup_headnode_userdata(configs):
 def start_headnode(conn, network, configs, instance_name):
 
     # Start headnode only if one does not exist.
-    nodes = get_instances(configs, conn, {'tag:Name': HEADNODE_NAME})
+    nodes = get_instances(conn, {'tag:Name': HEADNODE_NAME})
     if nodes:
         logging.warn("Attempting to start headnode while one exists {0} | {1}".format(nodes[0].tag['Name'], nodes[0].ip_address))
         return
@@ -276,12 +312,43 @@ def start_headnode(conn, network, configs, instance_name):
 
     return reservation.instances
 
+def start_nat (conn, subnet_id, sec_group_ids, configs):
+    # Start NAT only if one does not exist.
+    nodes = get_instances(conn, {'tag:Name': NAT_NAME})
+    if nodes:
+        logging.info("NAT exists {0} | {1}".format(nodes[0].tags['Name'], nodes[0].ip_address))
+        return nodes
+
+    print "[DEBUG] start_nat : {0}".format(NAT_NAME)
+
+    reservation = conn.run_instances(configs['NAT_IMAGE'],
+                                     min_count=1,
+                                     max_count=1,
+                                     instance_type=configs['NAT_MACHINE_TYPE'],
+                                     security_group_ids=sec_group_ids,
+                                     key_name=configs['AWS_KEYPAIR_NAME'],
+                                     subnet_id=subnet_id)
+
+    idx = 0
+    for instance in reservation.instances:
+        print instance, instance.id
+        sleep_until(instance, 'running')
+        instance.add_tag('Name', NAT_NAME)
+        address = setup_elastic_ip(conn)
+        conn.associate_address(instance_id=instance.id, allocation_id=address.allocation_id)
+        idx += 1
+
+    return reservation.instances
+
 def setup_worker_userdata(configs, headnode_ip):
 
     if configs['SERVICE_TYPE'] == 'slurm':
         userdata = configurator.getstring("worker_slurm")
     elif configs['SERVICE_TYPE'] == 'coasters':
         userdata = configurator.getstring("worker_coasters")
+    elif configs['SERVICE_TYPE'] == 'turbine':
+        userdata = configurator.getstring("worker_turbine")
+        userdata   = userdata.replace("PUBLIC_KEY", open("./turbine_rsa.pub").read())
     else:
         logging.error("Unknown SERVICE_TYPE:{0}\nCannot proceed, failing".format(configs['SERVICE_TYPE']))
         exit(-1);
@@ -309,7 +376,7 @@ def setup_worker_userdata(configs, headnode_ip):
 def start_worker(conn, network, configs, count):
 
     print "DEBUG: start_worker : ",count
-    nodes = get_instances(configs, conn, {'tag:Name': HEADNODE_NAME})
+    nodes = get_instances(conn, {'tag:Name': HEADNODE_NAME})
     if not nodes:
         logging.error("HEADNODE is not online :{0}".format(HEADNODE_NAME))
         logging.error("FATAL! Cannot proceed. Dying.")
@@ -335,16 +402,16 @@ def start_worker(conn, network, configs, count):
     for instance in reservation.instances:
         instance.add_tag('Name', "sworker-{0}".format(instance.id))
         instance.add_tag('subnet_id', network['WORKER_SUBNET'])
-        sleep_until(instance, 'running')
-        address = setup_elastic_ip(conn)
-        conn.associate_address(instance_id=instance.id, allocation_id=address.allocation_id)
+        #sleep_until(instance, 'running')
+        #address = setup_elastic_ip(conn)
+        #conn.associate_address(instance_id=instance.id, allocation_id=address.allocation_id)
         idx += 1
 
     return reservation.instances
 
 
 def check_conf_sanity(configs):
-    if configs["SERVICE_TYPE"] not in ["coasters", "slurm"]:
+    if configs["SERVICE_TYPE"] not in ["coasters", "slurm", "turbine"]:
         logging.error("Unknown SERVICE_TYPE : {0}".format(configs["SERVICE_TYPE"]))
         logging.error("Failing. Cannot process ")
         exit(ERR_CODE['CONFIG_SANITY_FAIL'])
@@ -459,7 +526,7 @@ def sleep_until(instance, state):
         time.sleep(2)
         instance.update()
 
-def get_instances(configs, conn, filters):
+def get_instances(conn, filters):
     nodes = []
     for reservation in conn.get_all_instances(filters=filters):
         nodes.extend(reservation.instances)
@@ -471,23 +538,28 @@ def list_resources(configs, conn):
 
     #filters = {'tag:Name': name, 'vpc-id':vpc.id}
     #return function(filters=filters)
-    service_nodes  = get_instances(configs, conn, {'subnet-id': configs['service_subnet_id']})
-    worker_nodes   = get_instances(configs, conn, {'subnet-id': configs['worker_subnet_id' ]})
+    service_nodes  = get_instances(conn, {'subnet-id': configs['service_subnet_id']})
+    worker_nodes   = get_instances(conn, {'subnet-id': configs['worker_subnet_id' ]})
     print "======================SERVICE SUBNET============================="
-    print "{0:20} | {1:10} | {2:10} | {3:10}".format("Name","ID", "IP_Addr", "State")
+    print "{0:20} | {1:10} | {2:>14} | {3:10}".format("Name","ID", "PublicIP", "State")
     for node in service_nodes:
         if 'Name' in node.tags :
-            print "{0:20} | {1:10} | {2:10} | {3:10}".format(node.tags['Name'],
+            print "{0:20} | {1:10} | {2:>14} | {3:10}".format(node.tags['Name'],
                                                              node.id, node.ip_address, node.state)
         else:
-            print "{0:20} | {1:10} | {2:10} | {3:10}".format("-",
+            print "{0:20} | {1:10} | {2:>14} | {3:10}".format("-",
                                                              node.id, node.ip_address, node.state)
     print "======================WORKER SUBNET=============================="
-    print "{0:20} | {1:10} | {2:10} | {3:10}".format("Name","ID", "IP_Addr", "State")
+    print "{0:20} | {1:10} | {2:>14} | {3:>14} | {4:10}".format("Name","ID", "PublicIP", "PrivateIP", "State")
     for node in worker_nodes:
-        print "{0:20} | {1:10} | {2:10} | {3:10}".format(node.tags['Name'],
-                                                         node.id, node.ip_address, node.state)
-
+        if 'Name' in node.tags :
+            print "{0:20} | {1:10} | {2:>14} | {3:>14} | {4:10}".format(node.tags['Name'],
+                                                                        node.id, node.ip_address,
+                                                                        node.private_ip_address, node.state)
+        else:
+            print "{0:20} | {1:10} | {2:>14} | {3:>14} | {4:10}".format("-",
+                                                                        node.id, node.ip_address,
+                                                                        node.private_ip_address, node.state)
 
 def manage_ip(configs, conn, instances):
 
@@ -499,7 +571,7 @@ def manage_ip(configs, conn, instances):
 
 
 def terminate_instance(configs, conn, instance_id ):
-    node = get_instances(configs, conn, {'instance-id': instance_id})
+    node = get_instances(conn, {'instance-id': instance_id})
     print node
     print node[0].id
     addrs = [address for address in conn.get_all_addresses(filters={'instance-id': [node[0].id]})]
@@ -509,14 +581,14 @@ def terminate_instance(configs, conn, instance_id ):
     node[0].terminate(dry_run=configs['AWS_DRY_RUN'])
 
 def terminate_all_nodes(configs, conn):
-    service_nodes  = get_instances(configs, conn, {'subnet-id': configs['service_subnet_id']})
-    worker_nodes   = get_instances(configs, conn, {'subnet-id': configs['worker_subnet_id' ]})
+    service_nodes  = get_instances(conn, {'subnet-id': configs['service_subnet_id']})
+    worker_nodes   = get_instances(conn, {'subnet-id': configs['worker_subnet_id' ]})
     nodes          = [node.tags['Name'] for node in service_nodes + worker_nodes]
     stop_node(configs, conn, nodes)
 
 
 def stop_node(configs, conn, node_names):
-    nodes = get_instances(configs, conn, {'tag:Name': node_names})
+    nodes = get_instances(conn, {'tag:Name': node_names})
     for node in nodes:
         addrs = [address for address in conn.get_all_addresses(filters={'instance-id': [node.id]})]
         for address in addrs:
@@ -527,7 +599,7 @@ def stop_node(configs, conn, node_names):
 
 def stop_nodes(configs, conn, network, worker_count):
     logging.debug("Stopping nodes: {0}".format(worker_count))
-    nodes = get_instances(configs, conn, {'subnet-id': configs['worker_subnet_id']})
+    nodes = get_instances(conn, {'subnet-id': configs['worker_subnet_id']})
     logging.debug("nodes: {0}".format(nodes))
     for node in nodes[0:worker_count]:
         print "[DEBUG] : Deleting node : {0}:{1}".format(node.id, node.tags['Name'])
@@ -544,7 +616,7 @@ def process_price(request):
 
 def spot_request_submit(conn, network, configs, count):
     print "DEBUG: start_worker : ",count
-    nodes = get_instances(configs, conn, {'tag:Name': HEADNODE_NAME})
+    nodes = get_instances(conn, {'tag:Name': HEADNODE_NAME})
     if not nodes:
         logging.error("HEADNODE is not online :{0}".format(HEADNODE_NAME))
         logging.error("FATAL! Cannot proceed. Dying.")
@@ -593,11 +665,14 @@ def spot_request_submit(conn, network, configs, count):
     instance_ids = [ x.instance_id for x in requests ]
     print "Instance ids : ", instance_ids
 
-    instances= get_instances(configs, conn, {'instance-id': instance_ids })
+    instances= get_instances(conn, {'instance-id': instance_ids })
 
     for instance in instances:
         instance.add_tag('Name', "sworker-{0}".format(instance.id))
         instance.add_tag('subnet_id', network['WORKER_SUBNET'])
+
+
+    for instance in instances:
         sleep_until(instance, 'running')
         address = setup_elastic_ip(conn)
         conn.associate_address(instance_id=instance.id, allocation_id=address.allocation_id)

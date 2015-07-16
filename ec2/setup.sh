@@ -94,6 +94,23 @@ connect()
     ssh -A -o StrictHostKeyChecking=no -l $AWS_USERNAME -i $REGION_KEYFILE $IP
 }
 
+update_turbine_headnode()
+{
+    source configs
+    NODE="swift-headnode"
+    [[ -z $AWS_USERNAME ]] && AWS_USERNAME="ubuntu"
+
+    RESOURCE=($(./aws.py list_resource $NODE))
+    IP=${RESOURCE[4]}
+
+    REGION_KEYFILE=$AWS_KEYPAIR_DIR/$AWS_KEYPAIR_NAME.$AWS_REGION.pem
+
+    echo "Connecting to AWS node:$NODE on $IP as $AWS_USERNAME"
+    echo "scp -i $REGION_KEYFILE ./worker_list $AWS_USERNAME@$IP:~/worker_list"
+
+    scp -i $REGION_KEYFILE ./worker_list $AWS_USERNAME@$IP:~/worker_list
+
+}
 
 init()
 {

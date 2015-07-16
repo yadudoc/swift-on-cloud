@@ -66,7 +66,7 @@ elif args[0] == "list_resource":
     if len(args) != 2:
         help()
 
-    nodes = cloud.get_instances(configs, conn, {'tag:Name': args[1]})
+    nodes = cloud.get_instances(conn, {'tag:Name': args[1]})
     for node in nodes:
         print "{0:20} | {1:10} | {2:10} | {3:10}".format(node.tags['Name'],
                                                          node.id, node.ip_address, node.state)
@@ -150,9 +150,9 @@ elif args[0] == "price_lookup":
     print "{0:15} {1:10} {2:10} {3:15}".format("Instance Type", "On-demand", "Spot price", "Region")
     for key in od_prices:
         if key in sp_prices:
-            print "{0:15} {1:10} {2:10} {3:15}".format(key, od_prices[key][0], sp_prices[key][0].price, sp_prices[key][0].region)
+            print "{0:15} {1:10} {2:>10} {3:>10}".format(key, od_prices[key][0], sp_prices[key][0].price, sp_prices[key][0].region.name)
         else:
-            print "{0:15} {1:10} {2:>10} {3:>15}".format(key, od_prices[key][0], "NA", "NA")
+            print "{0:15} {1:10} {2:>10} {3:>10}".format(key, od_prices[key][0], "NA", "NA")
 
 #==================================================================================
 #   Spot instance tests
