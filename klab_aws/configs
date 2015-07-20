@@ -1,0 +1,45 @@
+#AWS_CREDENTIALS_FILE=~/.ssh/keys/swift-grant-credentials.csv
+AWS_CREDENTIALS_FILE=/home/yadu/src/cloudbroker/keys/knowledge_lab.csv
+
+AWS_KEYPAIR_DIR=./keys
+AWS_KEYPAIR_NAME=klab-wikitest-pair
+# Set the number of worker nodes required
+AWS_WORKER_COUNT=9
+
+#ec2-user is the default user on Amazon linux
+AWS_USERNAME=ubuntu
+
+AWS_REGION=us-west-2
+#AWS_REGION=us-east-1
+SECURITY_GROUP=swift_security_group1
+
+
+# Ubuntu Server 14.04 LTS (PV), SSD Volume Type - ami-c9d497f9 (64-bit)
+HEADNODE_IMAGE=ami-63020553
+# Across regions
+#HEADNODE_IMAGE=ami-891bd2e2
+
+HEADNODE_MACHINE_TYPE=cc2.8xlarge
+
+# Ubuntu Server 14.04 LTS (PV), SSD Volume Type - ami-c9d497f9 (64-bit)
+#WORKER_IMAGE=ami-c9d497f9
+# HVM image
+
+
+WORKER_IMAGE=ami-63020553
+#WORKER_IMAGE=ami-891bd2e2
+# Headnode instance type, refer to Amazon instance types page for reference
+# Legal machine types : t1.micro | m1.small | m1.medium | m1.large
+WORKER_MACHINE_TYPE=cc2.8xlarge
+#WORKER_REQUEST={'type':'OnDemand'}
+WORKER_REQUEST="{'type':'Spot', 'price':'2.4', 'count': '2'}"
+#WORKER_REQUEST={'type':'Spot', 'strategy' : 'bid_on_demand', 'price':'0.10'}
+#WORKER_DISK=500 /dev/sdb1 /scratch
+
+# Set concurrent tasks per worker node
+WORKER_CONCURRENCY=15
+
+# SERVICE_TYPE can either be coasters or slurm
+SERVICE_TYPE=coasters
+#AWS_DRY_RUN=True
+AWS_DRY_RUN=False
