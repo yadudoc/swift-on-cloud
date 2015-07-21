@@ -103,6 +103,8 @@ update_turbine_headnode()
     RESOURCE=($(./aws.py list_resource $NODE))
     IP=${RESOURCE[4]}
 
+    list_resources | grep "sworker" | awk '{print $7}' > worker_list
+    
     REGION_KEYFILE=$AWS_KEYPAIR_DIR/$AWS_KEYPAIR_NAME.$AWS_REGION.pem
 
     echo "Connecting to AWS node:$NODE on $IP as $AWS_USERNAME"

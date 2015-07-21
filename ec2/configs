@@ -1,7 +1,8 @@
 #AWS_CREDENTIALS_FILE=~/.ssh/keys/swift-grant-credentials.csv
 AWS_CREDENTIALS_FILE=~/.ssh/keys/swift-grant-credentials.csv
-AWS_KEYPAIR_NAME=swift-test-pair
-AWS_KEYPAIR_FILE=~/.ssh/swift-test-pair.pem
+#AWS_KEYPAIR_NAME=swift-test-pair
+AWS_KEYPAIR_NAME=BigData_foo
+#AWS_KEYPAIR_FILE=~/.ssh/swift-test-pair.pem
 AWS_KEYPAIR_DIR=./keys
 # Set the number of worker nodes required
 AWS_WORKER_COUNT=1

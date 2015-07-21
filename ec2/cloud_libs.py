@@ -11,6 +11,7 @@ import logging
 import sys
 import json
 import urllib2
+import ast
 
 import imp
 try:
@@ -610,6 +611,7 @@ def stop_nodes(configs, conn, network, worker_count):
         node.terminate()
 
 def process_price(request):
+    request = ast.literal_eval(request)
     if request['type'].lower() == "spot" :
         print "Requesting a spot instance at {0}".format(float(request['price']))
         return float(request['price'])
